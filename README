@@ -1,0 +1,11 @@
+Shead README
+
+Shead is a head like utility which prints initial comment lines from source files.
+
+It currently knows about
+
+#       python, shell, ...
+;       lisp
+//      c-style single line
+/* */   c-style multi-line.
+

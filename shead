@@ -1,0 +1,239 @@
+#! /usr/bin/python
+#
+# Head like utility, prints initial comments from source file.
+# 
+# Try shead --help
+
+import os.path, getopt, sys
+
+USAGE = """
+NAME
+        shead - output initial comments from source files
+
+SYNOPSIS
+        shead [OPTION]... [FILE]...
+
+DESCRIPTION
+        Print the initial comments from each source file to standard
+        output.  With more then one file, precede each file with a header
+        giving the file name. 
+
+        -n, --lines n   
+            print the first n lines as with the traditional head.
+
+        -c, --cat
+            print all lines as with cat.
+
+        -q, --quite
+            do not print file name headers.
+
+        -e, --enum
+            Precede each line with a line number.
+
+        --lang
+            Print list of supported comment styles and exit.  The list may not be
+            exhaustive. 
+
+        -h, --help
+            Print this message and exit.
+
+If neither the -n or -c options are specified, an attempt is made to
+identify the type of comments by examining the first line.   If a known
+comment type is detected, each line is printed until the first non-comment
+line is reached. 
+"""
+
+no_banner = False
+line_number = 0
+print_line_numbers = False
+quite = False
+cat_count = None   # <0 cat whole file, >0 print cat line, ==0 print comment lines.
+
+LINE, BLOCK = 0, 1
+
+class LineComment:
+
+    def __init__(self, name, opening="", *languages):
+        self.name = name
+        self.opening = opening
+        self.languages = [name]
+        self.add(*languages)
+        self.comment_type = LINE
+
+    def add(self, *languages):
+        for lang in languages:
+            self.languages.append(lang)
+
+class BlockComment(LineComment):
+
+    def __init__(self, name, opening, closing, *languages):
+        super().__init__(name, opening, *languages)
+        self.closing = closing
+        self.comment_type = BLOCK
+            
+LINE_STYLES = {
+    "C" : LineComment("C", "//", "C++", "Java", "Kotlin", "Go", "Rust",
+                      "Swift", "Dart"),
+    "Python" : LineComment("Python", "#",  "Shell", "Ruby", "Julia", "Perl"),
+    "Lisp" : LineComment("Lisp", ";", ),
+    "Lua" : LineComment("Lua", "--", ),
+    "Forth" : LineComment("Forth", "\\", ),
+    "Fortran" : LineComment("Fortran", "!"),
+    }
+
+BLOCK_STYLES = {
+    "C" : BlockComment("C", "/*", "*/", "C++", "Java", "Kotlin", "Go", "Rust"),
+    "Lisp" : BlockComment("Lisp", "#|", "|#"),
+    "Lua" : BlockComment("Lua", "--[[", "--]]"),
+    "Forth" : BlockComment("Forth", "(", ")"),
+    "Ruby" : BlockComment("Ruby", "=begin", "=end"),
+    "Julia" : BlockComment("Julia", "#=", "=#"),
+    "Perl" : BlockComment("Perl", "=", "=cut"),
+    }
+
+
+search_order = []
+for entry, value in BLOCK_STYLES.items():
+    text = value.opening
+    search_order.append((len(text), text, value))
+
+for entry, value in LINE_STYLES.items():
+    text = value.opening
+    search_order.append((len(text), text, value))
+
+search_order.sort()
+search_order.reverse()
+
+def resolve_path(filename):
+    return os.path.abspath(os.path.expanduser(filename))
+
+def print_banner(filename):
+    if no_banner:
+        return
+    print("*"*60)
+    print(f"*** {filename}\n")
+
+def guess_type(file):
+    start = file.tell()
+    line = file.readline().strip()
+    for comment in search_order:
+        target = comment[1]
+        if line.startswith(target):
+            file.seek(start)
+            return comment
+    return None
+
+def print_line_number():
+    global line_number
+    if print_line_numbers:
+        frmt = "[%4d] "
+        print(frmt % line_number, end="")
+    line_number += 1
+        
+
+def print_line_comment(file, comment):
+    gnomon = comment.opening
+    while True:
+        line = file.readline()
+        if line.startswith(gnomon):
+            print_line_number()
+            print(line, end="")
+        else:
+            break
+    print()
+    
+
+def print_block_comment(file, comment):
+    terminal = comment.closing
+    while True:
+        line = file.readline()
+        print_line_number()
+        print(line, end="")
+        if terminal in line:
+            break
+    print()
+        
+def cat_file(file):
+    line = file.readline()
+    while line:
+        print_line_number()
+        print(line, end="")
+        line = file.readline()
+    print()
+
+def traditional_head(file, count):
+    counter = count
+    line = file.readline()
+    while counter and line:
+        print_line_number()
+        print(line, end="")
+        line = file.readline()
+        counter -= 1
+    print()
+
+def print_languages():
+    acc = {}
+    for i in LINE_STYLES.values():
+        acc[i.name] = True
+        for j in i.languages:
+            acc[j] = True
+    for i in BLOCK_STYLES.values():
+        acc[i.name] = True
+        for j in i.languages:
+            acc[j] = True
+    acc = list(acc.keys())
+    acc.sort()
+    for lang in acc:
+        print(lang)
+
+    
+if __name__ == '__main__':
+    shrtopts = "n:cqeh"
+    lngopts = ["lines=", "cat", "quite", "enum", "help", "lang"]
+    opts, args = getopt.getopt(sys.argv[1:], shrtopts, lngopts)
+    
+    try:
+        for opt, arg in opts:
+            if opt == "-h" or opt == "--help":
+                print(USAGE)
+                sys.exit(0)
+            elif opt == "l" or opt == "--lang":
+                print_languages()
+                sys.exit(0)
+            elif opt == "-e" or opt == "--enum":
+                print_line_numbers = True
+            elif opt == "-q" or opt == "--quite":
+                quite = True
+            elif opt == "-c" or opt == "--cat":
+                cat_count = -1
+            elif opt == "-n" or opt == "--lines":
+                cat_count = int(arg)
+            else:
+                print(f"Invalid option: {opt}")
+                print(USAGE)
+                sys.exit(1)
+        for path in args:
+            line_number = 0
+            abspath = resolve_path(path)
+            print_banner(abspath)
+            with open(abspath, "r") as file:
+                if not cat_count:
+                    guess = guess_type(file)
+                    if not guess:
+                        continue
+                    comment = guess[2]
+                    if comment.comment_type == LINE:
+                        print_line_comment(file, comment)
+                    else:
+                        print_block_comment(file, comment)
+                elif cat_count < 0:
+                    cat_file(file)
+                elif cat_count > 0:
+                    traditional_head(file, cat_count)
+                else:
+                    pass
+    except (IndexError, ValueError) as err:
+        print(err)
+        print(USAGE)
+        sys.exit(1)
+
