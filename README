@@ -1,11 +1,6 @@
 Shead README
 
-Shead is a head like utility which prints initial comment lines from source files.
-
-It currently knows about
-
-#       python, shell, ...
-;       lisp
-//      c-style single line
-/* */   c-style multi-line.
-
+Shead is a head like utility for source files.  Instead of printing the
+first n-lines, it prints the initial comment block, up to the first
+non-comment line.  It knows both single-line and block comment styles for
+about a dozen languages. 
